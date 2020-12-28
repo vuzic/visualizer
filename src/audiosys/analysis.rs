@@ -1,11 +1,11 @@
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 
-use audio::frequency_sensor::Features as AudioFeatures;
-use audio::frequency_sensor::FrequencySensorParams as AudioParams;
+pub use audio::frequency_sensor::Features as AudioFeatures;
+pub use audio::frequency_sensor::FrequencySensorParams as AudioParams;
 use audio::Analyzer;
 use clap::Clap;
-use specs::{System, World, Write};
+use legion::*;
 
 #[derive(Clap)]
 pub struct Opts {
@@ -22,10 +22,10 @@ pub struct Opts {
     fft_size: usize,
 
     #[clap(long, short = 'n', default_value = "16")]
-    bins: usize,
+    pub bins: usize,
 
     #[clap(long, short = 'l', default_value = "144")]
-    length: usize,
+    pub length: usize,
 }
 
 impl Opts {
@@ -138,19 +138,32 @@ impl AudioAnalysis {
     }
 }
 
-impl<'s> System<'s> for AudioAnalysis {
-    type SystemData = Write<'s, AudioFeatures>;
-
-    fn run(&mut self, mut features: Self::SystemData) {
-        if let Ok(feat) = self.get_features.try_recv() {
-            if self.verbose >= 3 {
-                println!("AudioAnalysis system received features");
-            }
-            *features = feat;
+#[system]
+pub fn update_audio_features(
+    #[state] audio: &AudioAnalysis,
+    #[resource] features: &mut AudioFeatures,
+) {
+    if let Ok(feat) = audio.get_features.try_recv() {
+        if audio.verbose >= 3 {
+            println!("update_audio_features_system received features");
         }
+        *features = feat;
     }
-
-    // fn setup(&mut self, world: &mut World) {
-    //     world.insert(AudioFeatures::default());
-    // }
 }
+
+// impl<'s> System<'s> for AudioAnalysis {
+//     type SystemData = Write<'s, AudioFeatures>;
+
+//     fn run(&mut self, mut features: Self::SystemData) {
+//         if let Ok(feat) = self.get_features.try_recv() {
+//             if self.verbose >= 3 {
+//                 println!("AudioAnalysis system received features");
+//             }
+//             *features = feat;
+//         }
+//     }
+
+//     // fn setup(&mut self, world: &mut World) {
+//     //     world.insert(AudioFeatures::default());
+//     // }
+// }

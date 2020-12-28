@@ -1,11 +1,11 @@
 mod audiosys;
-use audiosys::analysis::AudioAnalysis;
-use audiosys::component::AudioIntensity;
-use audiosys::system::AudioSystem;
+use audiosys::analysis::{update_audio_features_system, AudioAnalysis, AudioParams};
+use audiosys::intensity::{update_audio_intensity_system, AudioIntensity};
+
+// mod visualizer;
 
 use clap::Clap;
-use specs::prelude::*;
-use specs::{DispatcherBuilder, World};
+use legion::*;
 
 /// Vuzic Audio Visualizer
 #[derive(Clap)]
@@ -48,33 +48,32 @@ fn main() {
     match opts.cmd {
         Command::Init => (),
         Command::Run(audio_opts) => {
-            let mut world = World::new();
-            world.register::<AudioIntensity>();
+            let mut world = World::default();
 
+            let mut resources = Resources::default();
             let default_features = audio_opts.default_features();
-            world.insert(default_features);
+            resources.insert(default_features);
 
-            let params = audio::frequency_sensor::FrequencySensorParams::defaults();
+            let params = AudioParams::defaults();
+            let bins = audio_opts.bins;
             let audio = AudioAnalysis::new(audio_opts, params, opts.verbose);
+            let audio_features_system = update_audio_features_system(audio);
+            let audio_intensity_system = update_audio_intensity_system();
 
-            let mut dispatcher = DispatcherBuilder::new()
-                .with(audio, "audio_analysis", &[])
-                .with(AudioSystem, "audio_system", &["audio_analysis"])
+            let mut schedule = Schedule::builder()
+                .add_thread_local(audio_features_system)
+                .add_system(audio_intensity_system)
                 .build();
 
-            for i in 0..4 {
-                world
-                    .create_entity()
-                    .with(AudioIntensity {
-                        frame: 0,
-                        bucket: i,
-                    })
-                    .build();
-            }
+            world.extend((0..bins).map(|i| {
+                (AudioIntensity {
+                    frame: 0,
+                    bucket: i,
+                },)
+            }));
 
             loop {
-                dispatcher.dispatch(&mut world);
-                world.maintain();
+                schedule.execute(&mut world, &mut resources);
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
