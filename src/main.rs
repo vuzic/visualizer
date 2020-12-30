@@ -1,11 +1,9 @@
 mod audiosys;
-use audiosys::analysis::{update_audio_features_system, AudioAnalysis, AudioParams};
-use audiosys::intensity::{update_audio_intensity_system, AudioIntensity};
+use audiosys::analysis::{AudioAnalysis, AudioParams};
+use audiosys::intensity::{AudioIntensity, AudioIntensitySystem};
 
-// mod visualizer;
-
+use amethyst::{prelude::*, utils::application_root_dir};
 use clap::Clap;
-use legion::*;
 
 /// Vuzic Audio Visualizer
 #[derive(Clap)]
@@ -27,7 +25,7 @@ enum Command {
 
 // #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 // struct Config {
-//     audio: FrequencySensorParams,
+//     audio: AudioParams,
 //     visualizer: visualizer::Params,
 // }
 
@@ -36,46 +34,61 @@ enum Command {
 
 //     fn default() -> Self {
 //         Self {
-//             audio: FrequencySensorParams::defaults(),
-//             visualizer: visualizer::Params::defaults(),
+//             audio: AudioParams::default(),
+//             visualizer: visualizer::Params::default(),
 //         }
 //     }
 // }
 
+struct Init {
+    audio_opts: audiosys::analysis::Opts,
+}
+
+impl SimpleState for Init {
+    fn on_start(&mut self, data: StateData<'_, GameData>) {
+        let world = data.world;
+        let resources = data.resources;
+
+        let default_features = self.audio_opts.default_features();
+        resources.insert(default_features);
+
+        let bins = self.audio_opts.bins;
+        world.extend((0..bins).map(|i| {
+            (AudioIntensity {
+                frame: 0,
+                bucket: i,
+            },)
+        }));
+    }
+
+    fn update(&mut self, _data: &mut StateData<'_, GameData>) -> SimpleTrans {
+        Trans::Replace(Box::new(Visualizer))
+    }
+}
+
+struct Visualizer;
+impl SimpleState for Visualizer {}
+
 fn main() {
     let opts = Opts::parse();
+
+    amethyst::start_logger(Default::default());
+    let app_root = application_root_dir().expect("failed to get app_root");
 
     match opts.cmd {
         Command::Init => (),
         Command::Run(audio_opts) => {
-            let mut world = World::default();
+            let params = AudioParams::default();
+            let audio = AudioAnalysis::new(audio_opts.clone(), params, opts.verbose);
 
-            let mut resources = Resources::default();
-            let default_features = audio_opts.default_features();
-            resources.insert(default_features);
+            let mut dispatcher = DispatcherBuilder::default();
+            dispatcher
+                .add_thread_local(Box::new(audio))
+                .add_system(Box::new(AudioIntensitySystem));
 
-            let params = AudioParams::defaults();
-            let bins = audio_opts.bins;
-            let audio = AudioAnalysis::new(audio_opts, params, opts.verbose);
-            let audio_features_system = update_audio_features_system(audio);
-            let audio_intensity_system = update_audio_intensity_system();
-
-            let mut schedule = Schedule::builder()
-                .add_thread_local(audio_features_system)
-                .add_system(audio_intensity_system)
-                .build();
-
-            world.extend((0..bins).map(|i| {
-                (AudioIntensity {
-                    frame: 0,
-                    bucket: i,
-                },)
-            }));
-
-            loop {
-                schedule.execute(&mut world, &mut resources);
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
+            let game = Application::new(app_root, Init { audio_opts }, dispatcher)
+                .expect("failed to create app");
+            game.run();
         }
     }
 

@@ -1,13 +1,13 @@
 use std::sync::mpsc::{channel, Receiver};
 use std::thread;
 
+use amethyst::{core::dispatcher::ThreadLocalSystem, prelude::*};
 pub use audio::frequency_sensor::Features as AudioFeatures;
 pub use audio::frequency_sensor::FrequencySensorParams as AudioParams;
 use audio::Analyzer;
 use clap::Clap;
-use legion::*;
 
-#[derive(Clap)]
+#[derive(Clap, Clone)]
 pub struct Opts {
     #[clap(long, short)]
     device: Option<String>,
@@ -54,7 +54,7 @@ impl AudioAnalysis {
         let now = std::time::SystemTime::now();
 
         thread::spawn(move || {
-            let boost_params = audio::gain_control::Params::defaults();
+            let boost_params = audio::gain_control::Params::default();
             let mut analyzer = Analyzer::new(
                 fft_size,
                 sample_block_size,
@@ -138,32 +138,34 @@ impl AudioAnalysis {
     }
 }
 
-#[system]
-pub fn update_audio_features(
-    #[state] audio: &AudioAnalysis,
-    #[resource] features: &mut AudioFeatures,
-) {
-    if let Ok(feat) = audio.get_features.try_recv() {
-        if audio.verbose >= 3 {
-            println!("update_audio_features_system received features");
-        }
-        *features = feat;
+impl ThreadLocalSystem<'static> for AudioAnalysis {
+    fn build(&'static mut self) -> Box<dyn Runnable> {
+        Box::new(
+            SystemBuilder::new("AudioAnalysis")
+                .write_resource::<AudioFeatures>()
+                .build(move |_commands, _world, features, _queries| {
+                    if let Ok(feat) = self.get_features.try_recv() {
+                        if self.verbose >= 3 {
+                            println!("AudioAnalysis system received features");
+                        }
+                        **features = feat;
+                        // use std::ops::Deref;
+                        // *features.deref() = feat;
+                    }
+                }),
+        )
     }
 }
 
-// impl<'s> System<'s> for AudioAnalysis {
-//     type SystemData = Write<'s, AudioFeatures>;
-
-//     fn run(&mut self, mut features: Self::SystemData) {
-//         if let Ok(feat) = self.get_features.try_recv() {
-//             if self.verbose >= 3 {
-//                 println!("AudioAnalysis system received features");
-//             }
-//             *features = feat;
+// #[system]
+// pub fn update_audio_features(
+//     #[state] audio: &AudioAnalysis,
+//     #[resource] features: &mut AudioFeatures,
+// ) {
+//     if let Ok(feat) = audio.get_features.try_recv() {
+//         if audio.verbose >= 3 {
+//             println!("update_audio_features_system received features");
 //         }
+//         *features = feat;
 //     }
-
-//     // fn setup(&mut self, world: &mut World) {
-//     //     world.insert(AudioFeatures::default());
-//     // }
 // }
