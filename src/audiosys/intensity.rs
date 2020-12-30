@@ -1,4 +1,4 @@
-use amethyst::{ecs::SystemBuilder, prelude::*};
+use amethyst::{core::math::Vector3, core::transform::Transform, ecs::SystemBuilder, prelude::*};
 
 use super::analysis::AudioFeatures;
 
@@ -17,9 +17,9 @@ pub struct AudioIntensity {
 //     );
 // }
 
-pub struct AudioIntensitySystem;
+pub struct AudioIntensityDebugSystem;
 
-impl System<'_> for AudioIntensitySystem {
+impl System<'_> for AudioIntensityDebugSystem {
     fn build(&'_ mut self) -> Box<dyn ParallelRunnable> {
         Box::new(
             SystemBuilder::new("AudioIntensity")
@@ -32,6 +32,24 @@ impl System<'_> for AudioIntensitySystem {
                             "Audio Intensity (Frame={}, Bucket={:2}): {:.2}",
                             a.frame, a.bucket, amp
                         );
+                    }
+                }),
+        )
+    }
+}
+
+pub struct AudioIntensityScaleSystem;
+
+impl System<'_> for AudioIntensityScaleSystem {
+    fn build(&'_ mut self) -> Box<dyn ParallelRunnable> {
+        Box::new(
+            SystemBuilder::new("AudioIntensity")
+                .with_query(<(&AudioIntensity, &mut Transform)>::query())
+                .read_resource::<AudioFeatures>()
+                .build(move |_commands, world, features, audio_intensity_query| {
+                    for (a, trans) in audio_intensity_query.iter_mut(world) {
+                        let amp = features.get_amplitudes(a.frame)[a.bucket];
+                        trans.set_scale(Vector3::new(amp as f32, amp as f32, amp as f32));
                     }
                 }),
         )

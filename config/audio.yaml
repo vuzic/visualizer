@@ -1,0 +1,33 @@
+audio:
+  preemphasis: 8.0
+  diff_gain: 0.01
+  amp_scale: 1.0
+  amp_offset: 0.0
+  sync: 0.001
+  drag: 0.001
+  amp_filter:
+    tau: 20.0
+    gain: 1.0
+  amp_feedback:
+    tau: 200.0
+    gain: -1.0
+  diff_filter:
+    tau: 16.0
+    gain: 1.0
+  diff_feedback:
+    tau: 100.0
+    gain: -0.05
+  pos_scale_filter:
+    tau: 100.0
+    gain: 1.0
+  neg_scale_filter:
+    tau: 1000.0
+    gain: 1.0
+  gain_control:
+    filter_params:
+      tau: 100.0
+      gain: 1.0
+    kp: 0.005
+    kd: 0.001
+    ki: 0.001
+    pre_gain: 1.0

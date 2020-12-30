@@ -1,4 +1,4 @@
-use std::sync::mpsc::{channel, Receiver};
+use std::sync::mpsc::{channel, sync_channel, Receiver, TrySendError};
 use std::thread;
 
 use amethyst::{core::dispatcher::ThreadLocalSystem, prelude::*};
@@ -50,7 +50,7 @@ impl AudioAnalysis {
             length,
         } = opts;
         let (audio_data_tx, audio_data_rx) = channel();
-        let (send_features, get_features) = channel();
+        let (send_features, get_features) = sync_channel(1);
         let now = std::time::SystemTime::now();
 
         thread::spawn(move || {
@@ -103,13 +103,18 @@ impl AudioAnalysis {
                         println!("{}", out);
                     }
 
-                    if let Err(e) = send_features.send(features.clone()) {
-                        if verbose >= 3 {
-                            println!(
-                                "[{:08}]: failed to send features: {}",
-                                now.elapsed().unwrap().as_millis(),
-                                e
-                            );
+                    if let Err(e) = send_features.try_send(features.clone()) {
+                        match e {
+                            TrySendError::Full(_) => (),
+                            e => {
+                                if verbose >= 3 {
+                                    println!(
+                                        "[{:08}]: failed to send features: {}",
+                                        now.elapsed().unwrap().as_millis(),
+                                        e
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -140,17 +145,21 @@ impl AudioAnalysis {
 
 impl ThreadLocalSystem<'static> for AudioAnalysis {
     fn build(&'static mut self) -> Box<dyn Runnable> {
+        let mut now = std::time::SystemTime::now();
         Box::new(
             SystemBuilder::new("AudioAnalysis")
                 .write_resource::<AudioFeatures>()
                 .build(move |_commands, _world, features, _queries| {
                     if let Ok(feat) = self.get_features.try_recv() {
                         if self.verbose >= 3 {
-                            println!("AudioAnalysis system received features");
+                            println!(
+                                "[{:?}] AudioAnalysis system received features #{}",
+                                now.elapsed(),
+                                feat.get_frame_count(),
+                            );
+                            now = std::time::SystemTime::now();
                         }
                         **features = feat;
-                        // use std::ops::Deref;
-                        // *features.deref() = feat;
                     }
                 }),
         )

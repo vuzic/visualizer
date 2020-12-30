@@ -10,3 +10,6 @@ edition = "2018"
 amethyst = { path = "../../../software/amethyst", features = ["vulkan"] }
 audio = { path = "../audio" }
 clap = "3.0.0-beta.2"
+itertools = "0.10.0"
+serde = { version = "1.0.117", features = ["derive"] }
+serde_yaml = "0.8.14"
