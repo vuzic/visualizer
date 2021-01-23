@@ -3,7 +3,7 @@ use audiosys::analysis::{AudioAnalysis, AudioParams};
 use audiosys::intensity::{AudioIntensity, AudioIntensityScaleSystem};
 
 use amethyst::{
-    assets::{AssetStorage, Loader},
+    assets::{DefaultLoader, Handle, Loader, LoaderBundle, ProcessingQueue},
     core::{
         frame_limiter::FrameRateLimitStrategy,
         transform::{Transform, TransformBundle},
@@ -21,7 +21,7 @@ use amethyst::{
             texture::palette::load_from_linear_rgba,
         },
         shape::Shape,
-        types::DefaultBackend,
+        types::{DefaultBackend, MeshData, TextureData},
         Mesh, RenderingBundle, Texture,
     },
     utils::application_root_dir,
@@ -92,12 +92,12 @@ impl SimpleState for Visualizer {
         } = data;
 
         let mat_defaults = resources.get::<MaterialDefaults>().unwrap().0.clone();
-        let loader = resources.get::<Loader>().unwrap();
-        let mesh_storage = resources.get::<AssetStorage<Mesh>>().unwrap();
-        let tex_storage = resources.get::<AssetStorage<Texture>>().unwrap();
-        let mtl_storage = resources.get::<AssetStorage<Material>>().unwrap();
+        let loader = resources.get::<DefaultLoader>().unwrap();
+        let mesh_storage = resources.get::<ProcessingQueue<MeshData>>().unwrap();
+        let tex_storage = resources.get::<ProcessingQueue<TextureData>>().unwrap();
+        let mtl_storage = resources.get::<ProcessingQueue<Material>>().unwrap();
 
-        let (mesh, albedo) = {
+        let (mesh, albedo): (Handle<Mesh>, Handle<Texture>) = {
             let mesh = loader.load_from_data(
                 Shape::Sphere(32, 32)
                     .generate::<(Vec<Position>, Vec<Normal>, Vec<Tangent>, Vec<TexCoord>)>(None)
@@ -123,7 +123,7 @@ impl SimpleState for Visualizer {
                 0.0,
             );
 
-            let mtl = {
+            let mtl: Handle<Material> = {
                 let metallic_roughness = loader.load_from_data(
                     load_from_linear_rgba(LinSrgba::new(0.0, 0.5, 0.5, 0.0)).into(),
                     (),
@@ -206,6 +206,7 @@ fn main() {
             let mut dispatcher = DispatcherBuilder::default();
             dispatcher
                 .add_thread_local(Box::new(audio))
+                .add_bundle(LoaderBundle)
                 .add_bundle(TransformBundle)
                 .add_system(Box::new(AudioIntensityScaleSystem))
                 .add_bundle(
