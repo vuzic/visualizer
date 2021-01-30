@@ -2,10 +2,10 @@ use std::sync::mpsc::{channel, sync_channel, Receiver, TrySendError};
 use std::thread;
 
 use amethyst::{core::dispatcher::ThreadLocalSystem, prelude::*};
-pub use audio::frequency_sensor::Features as AudioFeatures;
-pub use audio::frequency_sensor::FrequencySensorParams as AudioParams;
 use audio::Analyzer;
 use clap::Clap;
+
+use super::{AudioFeatures, AudioParams};
 
 #[derive(Clap, Clone)]
 pub struct Opts {
@@ -54,6 +54,14 @@ impl AudioAnalysis {
         let now = std::time::SystemTime::now();
 
         thread::spawn(move || {
+            #[cfg(feature = "ledpanel")]
+            {
+                // This is an ugly hack to work around that we might be starting this with root
+                // privileges to initialize the ledpanel display driver on the pi, but then the
+                // driver will drop privileges. Jack will only let us create a client as the same
+                // user that is running the daemon.
+                thread::sleep(std::time::Duration::from_secs(2));
+            }
             let boost_params = audio::gain_control::Params::default();
             let mut analyzer = Analyzer::new(
                 fft_size,
@@ -82,6 +90,8 @@ impl AudioAnalysis {
             // random rust thing:
             // https://stackoverflow.com/questions/25649423/sending-trait-objects-between-threads-in-rust
             let handle_stream = Box::new(handle_stream) as Box<dyn Fn(&[f32]) -> () + Send>;
+
+            audio::Source::print_devices(false).expect("failed to print devices");
 
             let s = audio::Source::new(device.as_deref()).expect("failed to get device");
             let _stream = s
@@ -144,7 +154,7 @@ impl AudioAnalysis {
 }
 
 impl ThreadLocalSystem<'static> for AudioAnalysis {
-    fn build(&'static mut self) -> Box<dyn Runnable> {
+    fn build(self) -> Box<dyn Runnable> {
         let mut now = std::time::SystemTime::now();
         Box::new(
             SystemBuilder::new("AudioAnalysis")

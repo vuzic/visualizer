@@ -1,6 +1,6 @@
 use amethyst::{core::math::Vector3, core::transform::Transform, ecs::SystemBuilder, prelude::*};
 
-use super::analysis::AudioFeatures;
+use super::AudioFeatures;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AudioIntensity {
@@ -20,7 +20,7 @@ pub struct AudioIntensity {
 pub struct AudioIntensityDebugSystem;
 
 impl System<'_> for AudioIntensityDebugSystem {
-    fn build(&'_ mut self) -> Box<dyn ParallelRunnable> {
+    fn build(self) -> Box<dyn ParallelRunnable> {
         Box::new(
             SystemBuilder::new("AudioIntensity")
                 .with_query(<(&AudioIntensity,)>::query())
@@ -41,7 +41,7 @@ impl System<'_> for AudioIntensityDebugSystem {
 pub struct AudioIntensityScaleSystem;
 
 impl System<'_> for AudioIntensityScaleSystem {
-    fn build(&'_ mut self) -> Box<dyn ParallelRunnable> {
+    fn build(self) -> Box<dyn ParallelRunnable> {
         Box::new(
             SystemBuilder::new("AudioIntensity")
                 .with_query(<(&AudioIntensity, &mut Transform)>::query())

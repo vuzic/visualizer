@@ -7,14 +7,23 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-amethyst = { path = "../../../software/amethyst" }
+amethyst = { path = "../../../software/amethyst", features = ["parallel"], default-features = false }
 audio = { path = "../audio" }
 clap = "3.0.0-beta.2"
+glsl-layout = "0.4.0"
 itertools = "0.10.0"
+lazy_static = "1.4"
 serde = { version = "1.0.117", features = ["derive"] }
 serde_yaml = "0.8.14"
+rpi-led-matrix = { version = "0.2.2", optional = true }
+image = "0.23.12"
+rust-hsluv = "0.1.4"
+fast-math = "0.1.1"
 
 [features]
-default = ["vulkan"]
-metal = ["amethyst/metal"]
-vulkan = ["amethyst/vulkan"]
+#default = ["vulkan"]
+default = ["ledpanel"]
+gpu = []
+metal = ["amethyst/metal", "gpu"]
+vulkan = ["amethyst/vulkan", "amethyst/shader-compiler", "gpu"]
+ledpanel = ["rpi-led-matrix"]
