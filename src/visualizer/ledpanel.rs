@@ -111,12 +111,7 @@ impl ThreadLocalSystem<'static> for RenderToPanel {
                 .build(move |_commands, _world, (params, features), _query| {
                     let image = self.vis.render(params, features);
                     if let Err(e) = self.send_frame.send(image) {
-                        match e {
-                            // TrySendError::Full(_) => {
-                            //     println!("send frame full")
-                            // }
-                            e => println!("failed to send frame: {}", e),
-                        }
+                        println!("failed to send frame: {}", e);
                     }
                 }),
         )

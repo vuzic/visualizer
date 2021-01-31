@@ -20,6 +20,10 @@ image = "0.23.12"
 rust-hsluv = "0.1.4"
 fast-math = "0.1.1"
 anyhow = "1.0"
+actix-web = "3"
+actix = "0.10"
+actix-web-actors = "3"
+rand = "0.8"
 
 [features]
 #default = ["vulkan"]

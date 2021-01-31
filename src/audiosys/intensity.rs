@@ -24,7 +24,7 @@ impl System<'_> for AudioIntensityDebugSystem {
         Box::new(
             SystemBuilder::new("AudioIntensity")
                 .with_query(<(&AudioIntensity,)>::query())
-                .read_resource::<AudioFeatures>()
+                .read_resource::<Box<AudioFeatures>>()
                 .build(move |_commands, world, features, audio_intensity_query| {
                     for (a,) in audio_intensity_query.iter(world) {
                         let amp = features.get_amplitudes(a.frame)[a.bucket];
@@ -45,7 +45,7 @@ impl System<'_> for AudioIntensityScaleSystem {
         Box::new(
             SystemBuilder::new("AudioIntensity")
                 .with_query(<(&AudioIntensity, &mut Transform)>::query())
-                .read_resource::<AudioFeatures>()
+                .read_resource::<Box<AudioFeatures>>()
                 .build(move |_commands, world, features, audio_intensity_query| {
                     for (a, trans) in audio_intensity_query.iter_mut(world) {
                         let amp = features.get_amplitudes(a.frame)[a.bucket];

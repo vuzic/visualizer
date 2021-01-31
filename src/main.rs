@@ -1,30 +1,12 @@
+use actix::Actor;
 use anyhow::Result;
-
-mod audiosys;
-use audiosys::{analysis::AudioAnalysis, AnalyzerParams};
-
-mod visualizer;
-use visualizer::cpurender::Params as RenderParams;
-
-#[cfg(feature = "gpu")]
-use visualizer::warpgrid::WarpGridRender;
-
-#[cfg(feature = "gpu")]
-use amethyst::renderer::{
-    plugins::RenderToWindow, rendy::hal::command::ClearColor, types::DefaultBackend,
-    RenderingBundle,
-};
-
-#[cfg(feature = "ledpanel")]
-use visualizer::ledpanel;
-
-use amethyst::{
-    core::{frame_limiter::FrameRateLimitStrategy, transform::TransformBundle},
-    prelude::*,
-    // utils::application_root_dir,
-};
 use clap::Clap;
-use serde::{Deserialize, Serialize};
+
+mod api;
+mod audiosys;
+mod config;
+mod visualizer;
+use config::Config;
 
 /// Vuzic Audio Visualizer
 #[derive(Clap)]
@@ -46,56 +28,6 @@ struct Opts {
 enum Command {
     Init,
     Run(audiosys::analysis::Opts),
-}
-
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
-struct Config {
-    audio: AnalyzerParams,
-    render: RenderParams,
-    #[cfg(feature = "ledpanel")]
-    panel: ledpanel::Options,
-}
-
-impl Config {
-    fn default() -> Self {
-        Self {
-            audio: Default::default(),
-            render: Default::default(),
-            panel: Default::default(),
-        }
-    }
-}
-
-struct Init {
-    audio_opts: audiosys::analysis::Opts,
-    config: Config,
-}
-
-impl SimpleState for Init {
-    fn on_start(&mut self, data: StateData<'_, GameData>) {
-        data.resources.insert(Some(self.config.audio));
-        data.resources.insert(self.config.render);
-
-        let default_features = self.audio_opts.default_features();
-        data.resources.insert(default_features);
-        println!("@@@ inserted features");
-    }
-
-    fn update(&mut self, _data: &mut StateData<'_, GameData>) -> SimpleTrans {
-        Trans::Replace(Box::new(Visualizer {
-            bins: self.audio_opts.bins,
-            length: self.audio_opts.length,
-        }))
-    }
-}
-
-struct Visualizer {
-    bins: usize,
-    length: usize,
-}
-
-impl SimpleState for Visualizer {
-    fn on_start(&mut self, _data: StateData<'_, GameData>) {}
 }
 
 fn get_config(opts: &Opts) -> Result<Config> {
@@ -130,55 +62,23 @@ fn get_config(opts: &Opts) -> Result<Config> {
     Ok(config)
 }
 
+mod app;
+use app::App;
+
 fn main() {
     let opts = Opts::parse();
-
-    amethyst::start_logger(Default::default());
-    // let app_root = application_root_dir().expect("failed to get app_root");
-    let app_root = std::path::Path::new(".");
-
     let config = get_config(&opts).expect("failed to get config");
 
+    let verbose = opts.verbose;
     match opts.cmd {
         Command::Init => (),
         Command::Run(audio_opts) => {
-            let audio = AudioAnalysis::new(audio_opts.clone(), Default::default(), opts.verbose);
-
-            let mut dispatcher = DispatcherBuilder::default();
-            dispatcher
-                .add_thread_local(audio)
-                .add_bundle(TransformBundle);
-
-            #[cfg(feature = "gpu")]
-            {
-                dispatcher.add_bundle(
-                    RenderingBundle::<DefaultBackend>::new()
-                        .with_plugin(
-                            RenderToWindow::from_config_path(display_config_path)
-                                .unwrap()
-                                .with_clear(ClearColor {
-                                    float32: [0.0, 0.0, 0.0, 1.0],
-                                }),
-                        )
-                        .with_plugin(WarpGridRender::default()),
-                );
-            }
-
-            #[cfg(feature = "ledpanel")]
-            {
-                use ledpanel::RenderToPanel;
-                let render = RenderToPanel::new(opts.verbose, config.panel.clone());
-                dispatcher.add_thread_local(render);
-            }
-
-            let game = Application::build(app_root, Init { audio_opts, config })
-                .expect("failed to create app builder")
-                .with_frame_limit(FrameRateLimitStrategy::Unlimited, 240)
-                .build(dispatcher)
-                .expect("failed to build app");
-            game.run();
+            actix_web::rt::System::new("apiserver")
+                .block_on(async move {
+                    let app = App::new(config, audio_opts, verbose).start();
+                    api::run("127.0.0.1", "8080", app).await
+                })
+                .expect("apiserver rt error");
         }
     }
-
-    println!("oh, we done..?");
 }
