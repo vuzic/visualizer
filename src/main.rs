@@ -1,6 +1,7 @@
 use actix::Actor;
 use anyhow::Result;
 use clap::Clap;
+use log::info;
 
 mod api;
 mod audiosys;
@@ -39,7 +40,7 @@ fn get_config(opts: &Opts) -> Result<Config> {
             .join("vuzic.yaml"),
     );
     if opts.verbose > 0 {
-        println!("Using config at {:?}", config_path.clone().into_os_string());
+        info!("Using config at {:?}", config_path.clone().into_os_string());
     }
 
     let config = match std::fs::File::open(config_path.clone()) {
@@ -50,16 +51,36 @@ fn get_config(opts: &Opts) -> Result<Config> {
                 std::fs::create_dir_all(config_path.parent().unwrap())?;
                 let f = std::fs::File::create(config_path)?;
                 serde_yaml::to_writer(f, &config)?;
-                println!("Wrote config");
+                info!("Wrote config");
             };
             config
         }
     };
     if opts.verbose > 0 {
-        println!("{:?}", config)
+        info!("{:?}", config)
     }
 
     Ok(config)
+}
+
+fn setup_logging(verbose: i32) {
+    use log::{debug, trace, LevelFilter};
+    amethyst::start_logger(if verbose > 3 {
+        amethyst::LoggerConfig {
+            level_filter: LevelFilter::Trace,
+            ..Default::default()
+        }
+    } else if verbose > 0 {
+        amethyst::LoggerConfig {
+            level_filter: LevelFilter::Debug,
+            ..Default::default()
+        }
+    } else {
+        Default::default()
+    });
+
+    debug!("log level set to debug");
+    trace!("log level set to trace");
 }
 
 mod app;
@@ -67,6 +88,9 @@ use app::App;
 
 fn main() {
     let opts = Opts::parse();
+
+    setup_logging(opts.verbose);
+
     let config = get_config(&opts).expect("failed to get config");
 
     let verbose = opts.verbose;
