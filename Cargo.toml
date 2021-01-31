@@ -19,6 +19,7 @@ rpi-led-matrix = { version = "0.2.2", optional = true }
 image = "0.23.12"
 rust-hsluv = "0.1.4"
 fast-math = "0.1.1"
+anyhow = "1.0"
 
 [features]
 #default = ["vulkan"]

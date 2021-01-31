@@ -14,10 +14,13 @@ pub struct Params {
     max_alpha: f32,
     color_cycle_rate: f32,
     color_period: f32,
+    blur: f32,
+    hz_warp: (f32, f32),
+    vt_warp: (f32, f32),
 }
 
-impl Params {
-    pub fn defaults() -> Self {
+impl Default for Params {
+    fn default() -> Self {
         Self {
             value_scale: (1.0, 0.0),
             lightness_scale: (0.76, 0.0),
@@ -25,12 +28,14 @@ impl Params {
             max_alpha: 0.125,
             color_cycle_rate: 1. / 16.,
             color_period: 512.,
+            blur: 1.0,
+            hz_warp: (1.0, 1.0),
+            vt_warp: (1.0, 1.0),
         }
     }
 }
 
 pub struct Visualizer {
-    params: Params,
     verbose: i32,
     image: (u32, u32),
 }
@@ -44,15 +49,14 @@ lazy_static! {
 type F32Image = ImageBuffer<Rgba<f32>, Vec<f32>>;
 
 impl Visualizer {
-    pub fn new(w: u32, h: u32, params: Params, verbose: i32) -> Self {
+    pub fn new(w: u32, h: u32, verbose: i32) -> Self {
         Self {
-            params,
             verbose,
             image: (w, h),
         }
     }
 
-    pub fn render(&self, features: &AudioFeatures) -> RgbImage {
+    pub fn render(&self, params: &Params, features: &AudioFeatures) -> RgbImage {
         let (bins, length) = features.get_size();
 
         let scales = features.get_scales();
@@ -61,8 +65,7 @@ impl Visualizer {
 
         let mut color_buffer = F32Image::new(length as u32, bins as u32);
 
-        let mut vt_warp = Vec::new();
-        vt_warp.resize(length, 1.);
+        let mut vt_warp = vec![1.; length];
 
         for i in 0..length {
             let amp = features.get_amplitudes(i);
@@ -72,15 +75,19 @@ impl Visualizer {
                 color_buffer.put_pixel(
                     i as u32,
                     j as u32,
-                    self.get_hsv(&self.params, val as f32, energy[j] as f32, i as f32),
+                    self.get_hsv(params, val as f32, energy[j] as f32, i as f32),
                 );
 
                 s += amp[j];
             }
-            vt_warp[i] = s as f32 / bins as f32;
+            let warp = s as f32 / bins as f32;
+            vt_warp[i] = params.vt_warp.0 * warp + params.vt_warp.1;
         }
 
-        let mut hz_warp: Vec<f32> = diff.iter().map(|&x| x as f32).collect();
+        let mut hz_warp: Vec<f32> = diff
+            .iter()
+            .map(|&x| params.hz_warp.0 * x as f32 + params.hz_warp.1)
+            .collect();
         for i in 1..hz_warp.len() - 1 {
             hz_warp[i] = (hz_warp[i - 1] + hz_warp[i] + hz_warp[i + 1]) / 3.;
         }
@@ -128,7 +135,12 @@ impl Visualizer {
         )
         .unwrap();
 
-        let out = DynamicImage::ImageRgba8(out).blur(2.0).to_rgb8();
+        let out = if params.blur > 0. {
+            DynamicImage::ImageRgba8(out).blur(params.blur)
+        } else {
+            DynamicImage::ImageRgba8(out)
+        }
+        .to_rgb8();
 
         let mut count = COUNT.lock().unwrap();
         *count += 1;

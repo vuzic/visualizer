@@ -1,11 +1,11 @@
-use std::sync::mpsc::{channel, sync_channel, Receiver, TrySendError};
+use std::sync::mpsc::{channel, sync_channel, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::thread;
 
 use amethyst::{core::dispatcher::ThreadLocalSystem, prelude::*};
 use audio::Analyzer;
 use clap::Clap;
 
-use super::{AudioFeatures, AudioParams};
+use super::{AnalyzerParams, AudioFeatures};
 
 #[derive(Clap, Clone)]
 pub struct Opts {
@@ -37,10 +37,11 @@ impl Opts {
 pub struct AudioAnalysis {
     verbose: i32,
     get_features: Receiver<AudioFeatures>,
+    send_params: SyncSender<AnalyzerParams>,
 }
 
 impl AudioAnalysis {
-    pub fn new(opts: Opts, params: AudioParams, verbose: i32) -> Self {
+    pub fn new(opts: Opts, params: AnalyzerParams, verbose: i32) -> Self {
         let Opts {
             device,
             sample_rate,
@@ -51,6 +52,7 @@ impl AudioAnalysis {
         } = opts;
         let (audio_data_tx, audio_data_rx) = channel();
         let (send_features, get_features) = sync_channel(1);
+        let (send_params, recv_params) = sync_channel(1);
         let now = std::time::SystemTime::now();
 
         thread::spawn(move || {
@@ -62,15 +64,9 @@ impl AudioAnalysis {
                 // user that is running the daemon.
                 thread::sleep(std::time::Duration::from_secs(2));
             }
-            let boost_params = audio::gain_control::Params::default();
-            let mut analyzer = Analyzer::new(
-                fft_size,
-                sample_block_size,
-                bins,
-                length,
-                boost_params,
-                params,
-            );
+
+            let mut analyzer = Analyzer::new(fft_size, sample_block_size, bins, length);
+            let mut params = params;
 
             let handle_stream = move |data: &[f32]| {
                 if verbose >= 4 {
@@ -103,37 +99,41 @@ impl AudioAnalysis {
                 )
                 .expect("failed to get stream");
 
-            let mut process = |mut data| {
-                if let Some(features) = analyzer.process(&mut data) {
-                    if verbose >= 2 && features.get_frame_count() % 32 == 0 {
-                        let mut out = String::new();
-                        analyzer
-                            .write_debug(&mut out)
-                            .expect("failed to write debug");
-                        println!("{}", out);
+            loop {
+                match recv_params.try_recv() {
+                    Ok(new_params) => params = new_params,
+                    Err(TryRecvError::Empty) => (),
+                    Err(e) => {
+                        println!("failed to recv params: {}", e);
+                        break;
                     }
+                };
 
-                    if let Err(e) = send_features.try_send(features.clone()) {
-                        match e {
-                            TrySendError::Full(_) => (),
-                            e => {
-                                if verbose >= 3 {
-                                    println!(
-                                        "[{:08}]: failed to send features: {}",
-                                        now.elapsed().unwrap().as_millis(),
-                                        e
-                                    );
+                match audio_data_rx.recv() {
+                    Ok(mut data) => {
+                        if let Some(features) = analyzer.process(&mut data, &params) {
+                            if verbose >= 2 && features.get_frame_count() % 32 == 0 {
+                                let mut out = String::new();
+                                analyzer
+                                    .write_debug(&mut out)
+                                    .expect("failed to write debug");
+                                println!("{}", out);
+                            }
+                            if let Err(e) = send_features.try_send(features.clone()) {
+                                match e {
+                                    TrySendError::Full(_) => (),
+                                    e => {
+                                        if verbose >= 3 {
+                                            println!(
+                                                "[{:08}]: failed to send features: {}",
+                                                now.elapsed().unwrap().as_millis(),
+                                                e
+                                            );
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                }
-            };
-
-            loop {
-                match audio_data_rx.recv() {
-                    Ok(data) => {
-                        process(data);
                     }
                     Err(e) => {
                         println!("failed to recv audio: {}", e);
@@ -148,6 +148,7 @@ impl AudioAnalysis {
 
         Self {
             get_features,
+            send_params,
             verbose,
         }
     }
@@ -159,7 +160,8 @@ impl ThreadLocalSystem<'static> for AudioAnalysis {
         Box::new(
             SystemBuilder::new("AudioAnalysis")
                 .write_resource::<AudioFeatures>()
-                .build(move |_commands, _world, features, _queries| {
+                .write_resource::<Option<AnalyzerParams>>()
+                .build(move |_commands, _world, (features, params), _queries| {
                     if let Ok(feat) = self.get_features.try_recv() {
                         if self.verbose >= 3 {
                             println!(
@@ -171,10 +173,25 @@ impl ThreadLocalSystem<'static> for AudioAnalysis {
                         }
                         **features = feat;
                     }
+                    if let Some(params) = params.take() {
+                        if let Err(e) = self.send_params.send(params) {
+                            println!("failed to send params: {}", e);
+                        }
+                    }
                 }),
         )
     }
 }
+
+// pub struct AudioParamSystem;
+
+// impl ThreadLocalSystem<'_> for AudioParamSystem {
+//     fn build(self) -> Box<dyn Runnable> {
+//         Box::new(SystemBuilder::new("audio param system")
+//     .read
+// )
+//     }
+// }
 
 // #[system]
 // pub fn update_audio_features(
