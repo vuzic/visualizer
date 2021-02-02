@@ -10,11 +10,11 @@ use amethyst::{
     prelude::*,
 };
 use log::{debug, error};
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError, TrySendError};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
 
 use crate::audiosys::{
-    analysis::{AudioAnalysis, Opts as AudioOpts},
-    AnalyzerParams, AudioFeatures,
+    analysis::{AudioSystem, Opts as AudioOpts},
+    AnalyzerParams, AnalyzerState, AudioFeatures,
 };
 use crate::config::{Config, OptionalConfig};
 use crate::visualizer::cpurender::Params as RenderParams;
@@ -30,27 +30,21 @@ struct Init {
 
 impl SimpleState for Init {
     fn on_start(&mut self, data: StateData<'_, GameData>) {
-        data.resources.insert(AppSystemConfig::new());
         data.resources.insert(Some(self.config.audio));
         data.resources.insert(self.config.render);
+        data.resources.insert(AnalyzerState::default());
 
         let default_features = self.audio_opts.default_features();
         data.resources.insert(default_features);
-        println!("@@@ inserted features");
+        log::debug!("@@@ inserted features");
     }
 
     fn update(&mut self, _data: &mut StateData<'_, GameData>) -> SimpleTrans {
-        Trans::Replace(Box::new(Visualizer {
-            bins: self.audio_opts.bins,
-            length: self.audio_opts.length,
-        }))
+        Trans::Replace(Box::new(Visualizer {}))
     }
 }
 
-struct Visualizer {
-    bins: usize,
-    length: usize,
-}
+struct Visualizer;
 
 impl SimpleState for Visualizer {
     fn on_start(&mut self, _data: StateData<'_, GameData>) {}
@@ -58,27 +52,21 @@ impl SimpleState for Visualizer {
 
 /// actor which contains the game engine allowing it to comminicate with other actors
 pub struct App {
-    config: Config,
     config_update: SyncSender<OptionalConfig>,
-    selfconfig_update: SyncSender<AppSystemConfig>,
 }
 
-use crate::api::{ApiServer, AudioMessage};
-
 impl App {
-    pub(crate) fn new(config: Config, audio_opts: AudioOpts, verbose: i32) -> Self {
+    pub(crate) fn new(
+        config: Config,
+        audio_opts: AudioOpts,
+        audio: AudioSystem,
+        _verbose: i32,
+    ) -> Self {
         let (config_update, config_mailbox) = sync_channel(1);
-        let (selfconfig_update, selfconfig_mailbox) = sync_channel(1);
-        // let (audio_update, audio_mailbox) = sync_channel(1);
 
-        let app_system = AppSystem {
-            config_mailbox,
-            selfconfig_mailbox,
-        };
+        let app_system = AppSystem { config_mailbox };
 
         std::thread::spawn(move || {
-            let audio = AudioAnalysis::new(audio_opts.clone(), Default::default(), verbose);
-
             let mut dispatcher = DispatcherBuilder::default();
             dispatcher.add_thread_local(audio);
             dispatcher.add_thread_local(app_system);
@@ -100,7 +88,7 @@ impl App {
 
             #[cfg(feature = "ledpanel")]
             {
-                let render = RenderToPanel::new(verbose, config.panel.clone());
+                let render = RenderToPanel::new(_verbose, config.panel.clone());
                 dispatcher.add_thread_local(render);
             }
 
@@ -118,11 +106,7 @@ impl App {
             println!("oh, we done..?");
         });
 
-        Self {
-            config,
-            config_update,
-            selfconfig_update,
-        }
+        Self { config_update }
     }
 }
 
@@ -138,45 +122,19 @@ impl Handler<ConfigMessage> for App {
     type Result = ();
 
     fn handle(&mut self, config: ConfigMessage, _ctx: &mut Self::Context) {
-        self.config_update.send(config.0);
-    }
-}
-
-#[derive(Message)]
-#[rtype(result = "()")]
-pub(crate) struct AppConfigMessage(pub AppSystemConfig);
-
-impl Handler<AppConfigMessage> for App {
-    type Result = ();
-
-    fn handle(&mut self, config: AppConfigMessage, _: &mut Self::Context) {
-        self.selfconfig_update.send(config.0);
+        if let Err(e) = self.config_update.send(config.0) {
+            log::error!("failed to send config_update: {}", e);
+        }
     }
 }
 
 struct AppSystem {
     config_mailbox: Receiver<OptionalConfig>,
-    selfconfig_mailbox: Receiver<AppSystemConfig>,
-}
-
-pub(crate) struct AppSystemConfig {
-    pub subscription_enabled: Option<bool>,
-    pub apiserver: Option<Addr<ApiServer>>,
-}
-
-impl AppSystemConfig {
-    fn new() -> Self {
-        Self {
-            subscription_enabled: None,
-            apiserver: None,
-        }
-    }
 }
 
 impl ThreadLocalSystem<'_> for AppSystem {
     fn build(self) -> Box<dyn Runnable> {
         let builder = SystemBuilder::new("app system")
-            .write_resource::<AppSystemConfig>()
             .write_resource::<Option<AnalyzerParams>>()
             .write_resource::<RenderParams>()
             .read_resource::<AudioFeatures>();
@@ -190,44 +148,21 @@ impl ThreadLocalSystem<'_> for AppSystem {
                 Ok(config) => {
                     if let Some(ap) = config.audio {
                         debug!("updated audio params: {:?}", ap);
-                        resources.1.replace(ap);
+                        resources.0.replace(ap);
                     }
                     if let Some(rp) = config.render {
                         debug!("updated render params: {:?}", rp);
-                        *resources.2 = rp;
+                        *resources.1 = rp;
                     }
                     // FIXME: this will be a mess as soon as there are multiple options
                     // maybe options can always be in the struct but have no effect unless enabled
                     #[cfg(feature = "ledpanel")]
                     if let Some(lp) = config.panel {
                         debug!("updated panel config: {:?}", lp);
-                        *resources.4 = lp;
+                        *resources.2 = lp;
                     }
                 }
                 Err(e) => error!("error recv on config_mailbox: {}", e),
-            }
-
-            match self.selfconfig_mailbox.try_recv() {
-                Err(TryRecvError::Empty) => (),
-                Ok(config) => {
-                    if let Some(addr) = config.apiserver {
-                        debug!("updated apiserver addr");
-                        resources.0.apiserver.replace(addr);
-                    }
-                    if let Some(en) = config.subscription_enabled {
-                        debug!("set audio subs enable: {}", en);
-                        resources.0.subscription_enabled.replace(en);
-                    }
-                }
-                Err(e) => error!("error recv on selfconfig_mailbox: {}", e),
-            }
-
-            if resources.0.subscription_enabled.unwrap_or(false) {
-                if let Some(apiserver) = &resources.0.apiserver {
-                    if let Err(e) = apiserver.try_send(AudioMessage(resources.3.clone())) {
-                        error!("failed to send back AudioMessage: {}", e);
-                    }
-                }
             }
         }))
     }

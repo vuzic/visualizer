@@ -1,11 +1,13 @@
 use std::sync::mpsc::{channel, sync_channel, Receiver, SyncSender, TryRecvError, TrySendError};
 use std::thread;
 
+use actix::Recipient;
 use amethyst::{core::dispatcher::ThreadLocalSystem, prelude::*};
 use audio::Analyzer;
 use clap::Clap;
 
 use super::{AnalyzerParams, AudioFeatures};
+use crate::api::AudioMessage;
 
 #[derive(Clap, Clone)]
 pub struct Opts {
@@ -34,14 +36,24 @@ impl Opts {
     }
 }
 
+#[derive(Default)]
+pub struct Params {
+    ap: AnalyzerParams,
+    send_features: bool,
+    send_state: bool,
+}
+
 pub struct AudioAnalysis {
-    verbose: i32,
-    get_features: Receiver<AudioFeatures>,
-    send_params: SyncSender<AnalyzerParams>,
+    send_params: SyncSender<ParamsMessage>,
 }
 
 impl AudioAnalysis {
-    pub fn new(opts: Opts, params: AnalyzerParams, verbose: i32) -> Self {
+    pub(crate) fn new(
+        opts: Opts,
+        params: Params,
+        stream_receiver: Recipient<AudioMessage>,
+        verbose: i32,
+    ) -> (Self, AudioSystem) {
         let Opts {
             device,
             sample_rate,
@@ -101,7 +113,21 @@ impl AudioAnalysis {
 
             loop {
                 match recv_params.try_recv() {
-                    Ok(new_params) => params = new_params,
+                    Ok(ParamsMessage {
+                        ap,
+                        send_features,
+                        send_state,
+                    }) => {
+                        if let Some(ap) = ap {
+                            params.ap = ap;
+                        }
+                        if let Some(sf) = send_features {
+                            params.send_features = sf;
+                        }
+                        if let Some(ss) = send_state {
+                            params.send_state = ss;
+                        }
+                    }
                     Err(TryRecvError::Empty) => (),
                     Err(e) => {
                         println!("failed to recv params: {}", e);
@@ -111,7 +137,7 @@ impl AudioAnalysis {
 
                 match audio_data_rx.recv() {
                     Ok(mut data) => {
-                        if let Some(features) = analyzer.process(&mut data, &params) {
+                        if let Some(features) = analyzer.process(&mut data, &params.ap) {
                             if verbose >= 2 && features.get_frame_count() % 32 == 0 {
                                 let mut out = String::new();
                                 analyzer
@@ -133,6 +159,24 @@ impl AudioAnalysis {
                                     }
                                 }
                             }
+
+                            let Params {
+                                send_features,
+                                send_state,
+                                ..
+                            } = params;
+                            if send_features {
+                                let state = if send_state {
+                                    Some(analyzer.get_state())
+                                } else {
+                                    None
+                                };
+                                if let Err(e) =
+                                    stream_receiver.try_send(AudioMessage(features, state))
+                                {
+                                    log::error!("failed to send AudioMessage: {}", e);
+                                }
+                            }
                         }
                     }
                     Err(e) => {
@@ -146,15 +190,26 @@ impl AudioAnalysis {
             }
         });
 
-        Self {
-            get_features,
-            send_params,
-            verbose,
-        }
+        (
+            Self {
+                send_params: send_params.clone(),
+            },
+            AudioSystem {
+                get_features,
+                send_params,
+                verbose,
+            },
+        )
     }
 }
 
-impl ThreadLocalSystem<'static> for AudioAnalysis {
+pub struct AudioSystem {
+    get_features: Receiver<AudioFeatures>,
+    send_params: SyncSender<ParamsMessage>,
+    verbose: i32,
+}
+
+impl ThreadLocalSystem<'static> for AudioSystem {
     fn build(self) -> Box<dyn Runnable> {
         let mut now = std::time::SystemTime::now();
         Box::new(
@@ -164,7 +219,7 @@ impl ThreadLocalSystem<'static> for AudioAnalysis {
                 .build(move |_commands, _world, (features, params), _queries| {
                     if let Ok(feat) = self.get_features.try_recv() {
                         if self.verbose >= 3 {
-                            println!(
+                            log::trace!(
                                 "[{:?}] AudioAnalysis system received features #{}",
                                 now.elapsed(),
                                 feat.get_frame_count(),
@@ -174,8 +229,11 @@ impl ThreadLocalSystem<'static> for AudioAnalysis {
                         **features = feat;
                     }
                     if let Some(params) = params.take() {
-                        if let Err(e) = self.send_params.send(params) {
-                            println!("failed to send params: {}", e);
+                        if let Err(e) = self.send_params.send(ParamsMessage {
+                            ap: Some(params),
+                            ..Default::default()
+                        }) {
+                            log::error!("failed to send params: {}", e);
                         }
                     }
                 }),
@@ -183,25 +241,25 @@ impl ThreadLocalSystem<'static> for AudioAnalysis {
     }
 }
 
-// pub struct AudioParamSystem;
+use actix::{Actor, Context, Handler, Message};
 
-// impl ThreadLocalSystem<'_> for AudioParamSystem {
-//     fn build(self) -> Box<dyn Runnable> {
-//         Box::new(SystemBuilder::new("audio param system")
-//     .read
-// )
-//     }
-// }
+#[derive(Message, Default)]
+#[rtype(result = "()")]
+pub struct ParamsMessage {
+    pub ap: Option<AnalyzerParams>,
+    pub send_features: Option<bool>,
+    pub send_state: Option<bool>,
+}
 
-// #[system]
-// pub fn update_audio_features(
-//     #[state] audio: &AudioAnalysis,
-//     #[resource] features: &mut AudioFeatures,
-// ) {
-//     if let Ok(feat) = audio.get_features.try_recv() {
-//         if audio.verbose >= 3 {
-//             println!("update_audio_features_system received features");
-//         }
-//         *features = feat;
-//     }
-// }
+impl Actor for AudioAnalysis {
+    type Context = Context<Self>;
+}
+
+impl Handler<ParamsMessage> for AudioAnalysis {
+    type Result = ();
+    fn handle(&mut self, msg: ParamsMessage, _ctx: &mut Self::Context) {
+        if let Err(e) = self.send_params.send(msg) {
+            log::error!("failed to send ParamsMessage to audio thread: {}", e);
+        }
+    }
+}

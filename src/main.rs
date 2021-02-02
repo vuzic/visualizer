@@ -1,4 +1,4 @@
-use actix::Actor;
+use actix::*;
 use anyhow::Result;
 use clap::Clap;
 use log::info;
@@ -7,6 +7,7 @@ mod api;
 mod audiosys;
 mod config;
 mod visualizer;
+use api::ApiServer;
 use config::Config;
 
 /// Vuzic Audio Visualizer
@@ -85,6 +86,7 @@ fn setup_logging(verbose: i32) {
 
 mod app;
 use app::App;
+use audiosys::analysis::AudioAnalysis;
 
 fn main() {
     let opts = Opts::parse();
@@ -97,12 +99,28 @@ fn main() {
     match opts.cmd {
         Command::Init => (),
         Command::Run(audio_opts) => {
-            actix_web::rt::System::new("apiserver")
-                .block_on(async move {
-                    let app = App::new(config, audio_opts, verbose).start();
-                    api::run("127.0.0.1", "8080", app).await
-                })
-                .expect("apiserver rt error");
+            let mut sys = System::new("system");
+            sys.block_on(async move {
+                let server = ApiServer::create(|ctx| {
+                    let server = ctx.address();
+
+                    let (audio, audio_sys) = AudioAnalysis::new(
+                        audio_opts.clone(),
+                        Default::default(),
+                        server.recipient(),
+                        verbose,
+                    );
+
+                    let audio_addr = audio.start();
+
+                    let app = App::new(config, audio_opts, audio_sys, verbose).start();
+                    ApiServer::new(app, audio_addr)
+                });
+                api::run("127.0.0.1", "8080", server).await
+            })
+            .expect("failed to create actix system");
+
+            sys.run().expect("actix system runtime error");
         }
     }
 }

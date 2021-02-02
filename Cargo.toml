@@ -26,13 +26,10 @@ actix-web-actors = "3"
 rand = "0.8"
 serde_json = "1.0"
 log = "0.4"
-# rmp-serde = "0.15.3"
-# simple_logger = "1.11"
-# env_logger = "0.8.2"
 
 [features]
 #default = ["vulkan"]
-default = ["ledpanel"]
+# default = ["ledpanel"]
 gpu = []
 metal = ["amethyst/metal", "gpu"]
 vulkan = ["amethyst/vulkan", "amethyst/shader-compiler", "gpu"]
