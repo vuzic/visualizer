@@ -17,9 +17,11 @@ use crate::audiosys::{
     AnalyzerParams, AnalyzerState, AudioFeatures,
 };
 use crate::config::{Config, OptionalConfig};
-use crate::visualizer::cpurender::Params as RenderParams;
+use crate::visualizer::Params as RenderParams;
 #[cfg(feature = "ledpanel")]
-use crate::visualizer::ledpanel::{Options as LedPanelOptions, RenderToPanel};
+use crate::visualizer::{
+    ledpanel::{Options as LedPanelOptions, RenderToPanel},
+};
 #[cfg(feature = "gpu")]
 use crate::visualizer::warpgrid::WarpGridRender;
 

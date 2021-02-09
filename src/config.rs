@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::audiosys::AnalyzerParams;
-use crate::visualizer::cpurender::Params as RenderParams;
+use crate::visualizer::Params as RenderParams;
 #[cfg(feature = "ledpanel")]
 use crate::visualizer::ledpanel::Options as LedPanelOptions;
 

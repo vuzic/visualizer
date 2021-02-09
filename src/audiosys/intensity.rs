@@ -19,7 +19,7 @@ pub struct AudioIntensity {
 
 pub struct AudioIntensityDebugSystem;
 
-impl System<'_> for AudioIntensityDebugSystem {
+impl System for AudioIntensityDebugSystem {
     fn build(self) -> Box<dyn ParallelRunnable> {
         Box::new(
             SystemBuilder::new("AudioIntensity")
@@ -29,7 +29,7 @@ impl System<'_> for AudioIntensityDebugSystem {
                     for (a,) in audio_intensity_query.iter(world) {
                         let amp = features.get_amplitudes(a.frame)[a.bucket];
                         println!(
-                            "Audio Intensity (Frame={}, Bucket={:2}): {:.2}",
+                                  "Audio Intensity (Frame={}, Bucket={:2}): {:.2}",
                             a.frame, a.bucket, amp
                         );
                     }
@@ -40,7 +40,7 @@ impl System<'_> for AudioIntensityDebugSystem {
 
 pub struct AudioIntensityScaleSystem;
 
-impl System<'_> for AudioIntensityScaleSystem {
+impl System for AudioIntensityScaleSystem {
     fn build(self) -> Box<dyn ParallelRunnable> {
         Box::new(
             SystemBuilder::new("AudioIntensity")
