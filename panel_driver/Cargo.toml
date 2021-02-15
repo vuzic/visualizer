@@ -1,0 +1,21 @@
+[package]
+name = "panel_driver"
+version = "0.1.0"
+authors = ["Steven Cohen <peragwin@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+serde = { version = "1.0.117", features = ["derive"] }
+rpi-led-matrix = { version = "0.2.2" }
+image = "0.23.12"
+anyhow = "1.0"
+log = "0.4"
+clap = "3.0.0-beta.2"
+
+[lib]
+name = "panel_driver"
+path = "src/lib.rs"
+
+[[bin]]
+name = "panel_video"
+path = "src/bin/panel_video/main.rs"

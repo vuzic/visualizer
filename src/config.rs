@@ -5,7 +5,7 @@ use crate::visualizer::Params as RenderParams;
 #[cfg(feature = "ledpanel")]
 use crate::visualizer::ledpanel::Options as LedPanelOptions;
 
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub(crate) struct Config {
     pub audio: AnalyzerParams,
     pub render: RenderParams,
@@ -25,7 +25,7 @@ impl Default for Config {
 }
 
 // TODO: make a derive macro
-#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub(crate) struct OptionalConfig {
     pub audio: Option<AnalyzerParams>,
     pub render: Option<RenderParams>,

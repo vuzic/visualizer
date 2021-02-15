@@ -2,9 +2,9 @@ use std::sync::Mutex;
 
 use image::{DynamicImage, ImageBuffer, Pixel, RgbImage, Rgba, RgbaImage};
 use lazy_static::lazy_static;
-use serde::{Deserialize, Serialize};
 
 use crate::audiosys::AudioFeatures;
+use super::Params;
 
 
 pub struct Visualizer {

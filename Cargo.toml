@@ -15,7 +15,6 @@ itertools = "0.10.0"
 lazy_static = "1.4"
 serde = { version = "1.0.117", features = ["derive"] }
 serde_yaml = "0.8.14"
-rpi-led-matrix = { version = "0.2.2", optional = true }
 image = "0.23.12"
 rust-hsluv = "0.1.4"
 fast-math = "0.1.1"
@@ -26,11 +25,15 @@ actix-web-actors = "3"
 rand = "0.8"
 serde_json = "1.0"
 log = "0.4"
+panel_driver = { path = "panel_driver", optional = true }
 
 [features]
 #default = ["vulkan"]
-# default = ["ledpanel"]
+default = ["ledpanel"]
 gpu = []
 metal = ["amethyst/metal", "gpu"]
 vulkan = ["amethyst/vulkan", "amethyst/shader-compiler", "gpu"]
-ledpanel = ["rpi-led-matrix"]
+ledpanel = ["panel_driver"]
+
+[workspace]
+members = ["panel_driver"]

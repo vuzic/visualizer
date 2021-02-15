@@ -14,7 +14,7 @@ use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TryRecvError};
 
 use crate::audiosys::{
     analysis::{AudioSystem, Opts as AudioOpts},
-    AnalyzerParams, AnalyzerState, AudioFeatures,
+    AnalyzerParams, AnalyzerState,
 };
 use crate::config::{Config, OptionalConfig};
 use crate::visualizer::Params as RenderParams;
@@ -138,11 +138,10 @@ impl ThreadLocalSystem<'_> for AppSystem {
     fn build(self) -> Box<dyn Runnable> {
         let builder = SystemBuilder::new("app system")
             .write_resource::<Option<AnalyzerParams>>()
-            .write_resource::<RenderParams>()
-            .read_resource::<AudioFeatures>();
+            .write_resource::<RenderParams>();
 
         #[cfg(feature = "ledpanel")]
-        builder.write_resource::<LedPanelOptions>();
+        let builder = builder.write_resource::<LedPanelOptions>();
 
         Box::new(builder.build(move |_commands, _world, resources, _query| {
             match self.config_mailbox.try_recv() {
