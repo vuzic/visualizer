@@ -1,0 +1,22 @@
+[package]
+name = "parallel_strip_driver"
+version = "0.1.0"
+authors = ["Steven Cohen <peragwin@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+embedded-hal = "=1.0.0-alpha.3"
+rppal = { version = "0.11.3", features = ["hal"] }
+image = "0.23.12"
+anyhow = "1.0"
+log = "0.4"
+clap = "3.0.0-beta.2"
+simple_logger = "1.11"
+
+[lib]
+name = "parallel_strip_driver"
+path = "src/lib.rs"
+
+[[bin]]
+name = "demo"
+path = "src/bin/demo/main.rs"

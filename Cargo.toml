@@ -36,4 +36,4 @@ vulkan = ["amethyst/vulkan", "amethyst/shader-compiler", "gpu"]
 ledpanel = ["panel_driver"]
 
 [workspace]
-members = ["panel_driver"]
+members = ["panel_driver", "parallel_strip_driver"]
